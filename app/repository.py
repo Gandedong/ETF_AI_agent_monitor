@@ -84,7 +84,7 @@ def insert_snapshot(snapshot: dict[str, Any]) -> int:
                 snapshot.get("volume_amount"),
                 snapshot.get("change_pct"),
                 snapshot.get("source"),
-                json.dumps(snapshot.get("raw_data", {}), ensure_ascii=False),
+                json.dumps(snapshot.get("raw_data", {}), ensure_ascii=False, default=str),
             ),
         )
         return int(cur.lastrowid)

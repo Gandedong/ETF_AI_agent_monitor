@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import traceback
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from .. import repository as repo
@@ -178,9 +180,28 @@ class MarketDataClient:
 
     @staticmethod
     def _safe_val(value: Any) -> Any:
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            return {str(k): MarketDataClient._safe_val(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [MarketDataClient._safe_val(v) for v in value]
+
+        # pandas.NaT behaves like a datetime in isinstance checks but is not serializable.
+        if type(value).__name__ == "NaTType":
+            return None
+
+        if isinstance(value, Decimal):
+            return None if value.is_nan() else float(value)
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+
         if hasattr(value, "item"):
             try:
-                return value.item()
+                item_value = value.item()
+                if item_value is not value:
+                    return MarketDataClient._safe_val(item_value)
             except Exception:  # noqa: BLE001
                 pass
         try:
