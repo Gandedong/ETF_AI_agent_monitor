@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ETF Agent Monitor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>ETF/LOF 盯盘与 Agent 辅助决策系统</h1>
+    <p>稳健型策略：低溢价、分批、只提醒、不自动交易。</p>
+  </header>
+
+  <main>
+    <section class="card action-card">
+      <h2>手动运行监控</h2>
+      <p>点击后会采集行情、计算规则、生成 Agent 报告。首次运行如果 AKShare 数据不可用，可先用下面的“人工行情录入”补数据。</p>
+      <button onclick="runMonitor()">运行一次监控</button>
+      <pre id="run-result"></pre>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>基金池</h2>
+        <table>
+          <thead><tr><th>代码</th><th>名称</th><th>市场</th><th>角色</th><th>状态</th></tr></thead>
+          <tbody>
+            {% for f in funds %}
+            <tr>
+              <td>{{ f.code }}</td><td>{{ f.name }}</td><td>{{ f.market or '' }}</td><td>{{ f.strategy_role or '' }}</td><td>{{ '启用' if f.is_active else '停用' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>持仓</h2>
+        <table>
+          <thead><tr><th>代码</th><th>名称</th><th>份额</th><th>成本价</th><th>总成本</th><th>备注</th></tr></thead>
+          <tbody>
+            {% for p in positions %}
+            <tr>
+              <td>{{ p.code }}</td><td>{{ p.name or '' }}</td><td>{{ p.quantity }}</td><td>{{ p.cost_price }}</td><td>{{ p.total_cost }}</td><td>{{ p.note or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>最新行情快照</h2>
+      <table>
+        <thead><tr><th>时间</th><th>代码</th><th>名称</th><th>价格</th><th>净值/估值</th><th>溢价率%</th><th>成交额</th><th>涨跌幅%</th><th>来源</th></tr></thead>
+        <tbody>
+          {% for s in snapshots %}
+          <tr>
+            <td>{{ s.snapshot_time }}</td><td>{{ s.code }}</td><td>{{ s.name or '' }}</td><td>{{ s.price or 'N/A' }}</td><td>{{ s.nav_est or 'N/A' }}</td><td>{{ s.premium_rate or 'N/A' }}</td><td>{{ s.volume_amount or 'N/A' }}</td><td>{{ s.change_pct or 'N/A' }}</td><td>{{ s.source }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>人工行情录入</h2>
+        <p>用于免费数据源不可用、或你希望用券商软件数据校准时。</p>
+        <label>基金代码 <input id="mq-code" value="513650"></label>
+        <label>现价 <input id="mq-price" placeholder="例如 1.82"></label>
+        <label>估算净值/IOPV <input id="mq-nav" placeholder="可空"></label>
+        <label>溢价率% <input id="mq-premium" placeholder="例如 1.16"></label>
+        <label>成交额 <input id="mq-volume" placeholder="可空"></label>
+        <label>备注 <input id="mq-note" placeholder="来自券商软件/HaoETF等"></label>
+        <button onclick="submitManualQuote()">保存人工行情</button>
+        <pre id="manual-result"></pre>
+      </div>
+
+      <div class="card">
+        <h2>最近提醒</h2>
+        <ul class="alert-list">
+          {% for a in alerts %}
+          <li class="{{ a.level }}"><strong>[{{ a.level }}] {{ a.code }} {{ a.action }}</strong><br>{{ a.message }}<br><small>{{ a.created_at }}</small></li>
+          {% else %}
+          <li>暂无提醒。</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>最近 Agent 报告</h2>
+      {% for r in reports %}
+      <article class="report">
+        <div class="report-meta">{{ r.created_at }} · {{ r.model }}</div>
+        <pre>{{ r.content }}</pre>
+      </article>
+      {% else %}
+      <p>暂无报告。点击“运行一次监控”生成。</p>
+      {% endfor %}
+    </section>
+  </main>
+
+  <script>
+    async function runMonitor() {
+      const el = document.getElementById('run-result');
+      el.textContent = '正在运行...';
+      const resp = await fetch('/api/monitor/run?force_agent=true', { method: 'POST' });
+      const data = await resp.json();
+      el.textContent = JSON.stringify({ alerts: data.alerts, model: data.model }, null, 2);
+      setTimeout(() => location.reload(), 1200);
+    }
+
+    function numOrNull(id) {
+      const v = document.getElementById(id).value.trim();
+      return v === '' ? null : Number(v);
+    }
+
+    async function submitManualQuote() {
+      const payload = {
+        code: document.getElementById('mq-code').value.trim(),
+        price: numOrNull('mq-price'),
+        nav_est: numOrNull('mq-nav'),
+        premium_rate: numOrNull('mq-premium'),
+        volume_amount: numOrNull('mq-volume'),
+        note: document.getElementById('mq-note').value.trim()
+      };
+      const resp = await fetch('/api/manual-quotes', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      document.getElementById('manual-result').textContent = JSON.stringify(await resp.json(), null, 2);
+    }
+  </script>
+</body>
+</html>
