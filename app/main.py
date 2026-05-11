@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, HTTPException
@@ -15,9 +16,11 @@ from .services.monitor import MonitorService
 from .services.scheduler import start_scheduler, shutdown_scheduler
 from . import repository as repo
 
+APP_DIR = Path(__file__).resolve().parent
+
 app = FastAPI(title="ETF Agent Monitor", version="1.0.0")
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
+templates = Jinja2Templates(directory=APP_DIR / "templates")
 monitor_service = MonitorService()
 
 
@@ -65,9 +68,9 @@ def on_shutdown() -> None:
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "funds": repo.list_funds(),
             "positions": repo.list_positions(),
             "snapshots": repo.latest_snapshots(),

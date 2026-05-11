@@ -72,8 +72,16 @@ OPENROUTER_MODEL=deepseek/deepseek-chat
 
 ## 4. 启动
 
+从仓库根目录启动：
+
 ```bash
 uvicorn app.main:app --reload
+```
+
+如果当前目录不在仓库根目录，可指定仓库路径后启动；应用会根据 `app/main.py` 的实际位置加载 `app/static` 和 `app/templates`，首页静态资源和模板不依赖当前工作目录：
+
+```bash
+PYTHONPATH=/path/to/etf_agent_monitor uvicorn app.main:app --reload
 ```
 
 打开：
