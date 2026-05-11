@@ -12,11 +12,12 @@ class MarketDataClient:
     免费行情数据适配器。
 
     设计原则：
-    1. 先尝试 AKShare ETF 实时行情；
-    2. 再尝试 AKShare 场内基金净值/折价率数据；
-    3. 最后使用 manual_quotes 表中的人工录入数据兜底。
+    1. 如果存在最新 manual_quotes 记录，人工录入字段优先；
+    2. 人工字段为空时，再回退到 AKShare ETF 实时行情；
+    3. AKShare 实时行情缺失时，再尝试 AKShare 场内基金净值/折价率数据。
 
-    注意：免费数据源字段名、频率、可用性可能变化。真正下单前应以券商行情和基金公告为准。
+    注意：免费数据源字段名、频率、可用性可能变化。人工录入数据代表用户主动校准，
+    因此优先级高于免费接口；真正下单前仍应以券商行情和基金公告为准。
     """
 
     def get_snapshot(self, code: str, name_hint: str = "") -> dict[str, Any]:
@@ -26,36 +27,42 @@ class MarketDataClient:
         manual = repo.latest_manual_quote(code)
 
         name = name_hint or (ak_spot or {}).get("name") or (ak_daily or {}).get("name") or (manual or {}).get("name") or code
-        price = self._first_non_none(
-            (ak_spot or {}).get("price"),
-            (ak_daily or {}).get("price"),
-            (manual or {}).get("price"),
+        price, price_source = self._first_non_none_with_source(
+            ("manual_quote", (manual or {}).get("price")),
+            ("akshare.fund_etf_spot_em", (ak_spot or {}).get("price")),
+            ("akshare.fund_etf_fund_daily_em", (ak_daily or {}).get("price")),
         )
-        nav_est = self._first_non_none(
-            (ak_daily or {}).get("nav_est"),
-            (manual or {}).get("nav_est"),
+        nav_est, nav_est_source = self._first_non_none_with_source(
+            ("manual_quote", (manual or {}).get("nav_est")),
+            ("akshare.fund_etf_fund_daily_em", (ak_daily or {}).get("nav_est")),
         )
-        premium_rate = self._first_non_none(
-            (ak_daily or {}).get("premium_rate"),
-            (manual or {}).get("premium_rate"),
-            pct_from_price_nav(price, nav_est),
+        premium_from_price_nav = pct_from_price_nav(price, nav_est)
+        premium_rate, premium_rate_source = self._first_non_none_with_source(
+            ("manual_quote", (manual or {}).get("premium_rate")),
+            ("akshare.fund_etf_fund_daily_em", (ak_daily or {}).get("premium_rate")),
+            ("derived.price_nav", premium_from_price_nav),
         )
-        volume_amount = self._first_non_none(
-            (ak_spot or {}).get("volume_amount"),
-            (manual or {}).get("volume_amount"),
+        volume_amount, volume_amount_source = self._first_non_none_with_source(
+            ("manual_quote", (manual or {}).get("volume_amount")),
+            ("akshare.fund_etf_spot_em", (ak_spot or {}).get("volume_amount")),
         )
-        change_pct = self._first_non_none(
-            (ak_spot or {}).get("change_pct"),
-            (manual or {}).get("change_pct"),
+        change_pct, change_pct_source = self._first_non_none_with_source(
+            ("manual_quote", (manual or {}).get("change_pct")),
+            ("akshare.fund_etf_spot_em", (ak_spot or {}).get("change_pct")),
         )
 
-        source_parts = []
-        if ak_spot:
-            source_parts.append("akshare.fund_etf_spot_em")
-        if ak_daily:
-            source_parts.append("akshare.fund_etf_fund_daily_em")
-        if manual:
-            source_parts.append("manual_quote")
+        field_sources = {
+            "price": price_source,
+            "nav_est": nav_est_source,
+            "premium_rate": premium_rate_source,
+            "volume_amount": volume_amount_source,
+            "change_pct": change_pct_source,
+        }
+        source_parts = [
+            f"{field}={source}"
+            for field, source in field_sources.items()
+            if source is not None
+        ]
         if not source_parts:
             source_parts.append("unavailable")
 
@@ -67,12 +74,13 @@ class MarketDataClient:
             "premium_rate": premium_rate,
             "volume_amount": volume_amount,
             "change_pct": change_pct,
-            "source": "+".join(source_parts),
+            "source": "; ".join(source_parts),
             "raw_data": {
                 "ak_spot": ak_spot,
                 "ak_daily": ak_daily,
                 "manual": manual,
                 "errors": errors,
+                "field_sources": field_sources,
             },
         }
 
@@ -82,6 +90,13 @@ class MarketDataClient:
             if value is not None:
                 return value
         return None
+
+    @staticmethod
+    def _first_non_none_with_source(*source_values: tuple[str, Any]) -> tuple[Any, str | None]:
+        for source, value in source_values:
+            if value is not None:
+                return value, source
+        return None, None
 
     def _get_akshare_etf_spot(self, code: str, errors: list[str]) -> dict[str, Any] | None:
         try:
