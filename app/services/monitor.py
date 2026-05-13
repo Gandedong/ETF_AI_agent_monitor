@@ -7,6 +7,7 @@ from ..config import settings
 from .market_data import MarketDataClient
 from .rules import evaluate_snapshot, build_deterministic_recommendation
 from .openrouter_agent import build_agent_prompt, call_openrouter
+from .email_notifier import send_monitor_email
 
 
 class MonitorService:
@@ -43,9 +44,12 @@ class MonitorService:
                 model = "local-rules-fallback"
             repo.insert_agent_report("monitor", report, model, prompt)
 
+        email_status = send_monitor_email(snapshots, alerts, report, model)
+
         return {
             "snapshots": snapshots,
             "alerts": alerts,
             "report": report,
             "model": model,
+            "email": email_status,
         }

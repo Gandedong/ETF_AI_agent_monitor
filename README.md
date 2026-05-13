@@ -26,6 +26,7 @@
   - 159209 价格 ≥ 1.23：反弹减仓观察
   - 159209 价格 ≥ 1.241：回本观察
 - OpenRouter Agent 报告
+- SMTP 邮件提醒：规则触发后可发送快照、提醒和 Agent 报告
 - APScheduler 定时任务：默认交易日 10:30 和 14:30 运行
 - 简单网页看板：基金池、持仓、最新快照、提醒、Agent报告
 - 人工行情录入：最新人工记录优先于免费数据源；人工字段为空时才回退 AKShare，可用券商软件/HaoETF 数据校准
@@ -70,7 +71,33 @@ OPENROUTER_MODEL=deepseek/deepseek-chat
 
 如果不填 `OPENROUTER_API_KEY`，系统仍可运行，但只会输出本地规则解释，不会调用大模型。
 
-## 4. 启动
+
+## 4. 配置邮件提醒（可选）
+
+如果希望规则触发后自动发邮件，在 `.env` 中开启 SMTP 配置：
+
+```env
+EMAIL_ENABLED=true
+EMAIL_SMTP_HOST=smtp.example.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USERNAME=你的邮箱账号
+EMAIL_SMTP_PASSWORD=你的邮箱授权码或SMTP密码
+EMAIL_SMTP_USE_TLS=true
+EMAIL_SMTP_USE_SSL=false
+EMAIL_FROM=ETF Agent Monitor <your_email@example.com>
+EMAIL_TO=recipient1@example.com,recipient2@example.com
+EMAIL_ALERT_LEVELS=info,warning,danger
+EMAIL_SUBJECT_PREFIX=ETF盯盘提醒
+```
+
+说明：
+
+- `EMAIL_ENABLED=false` 时不会发送邮件，监控接口会返回 `email.status=skipped`。
+- `EMAIL_ALERT_LEVELS` 用逗号控制哪些等级触发邮件，例如只想接收谨慎和风险提醒，可设为 `warning,danger`。
+- 邮件发送失败不会中断盯盘流程；接口响应中的 `email` 字段会返回 `sent`、`skipped` 或 `error` 状态。
+- 常见邮箱服务商通常需要使用“授权码/应用专用密码”，不建议填写网页登录密码。
+
+## 5. 启动
 
 从仓库根目录启动：
 
@@ -92,7 +119,7 @@ http://127.0.0.1:8000
 
 首次启动会自动创建数据库并写入默认基金池、持仓占位和规则。
 
-## 5. 推荐使用流程
+## 6. 推荐使用流程
 
 ### 第一步：补录实际持仓
 
@@ -133,13 +160,13 @@ curl -X POST "http://127.0.0.1:8000/api/monitor/run?force_agent=true"
 
 然后再运行一次监控。若只想人工覆盖部分指标，可只填写需要校准的字段，其他字段留空让系统继续使用 AKShare。
 
-## 6. 重要说明
+## 7. 重要说明
 
-### 6.1 为什么保留人工行情录入？
+### 7.1 为什么保留人工行情录入？
 
 免费行情接口经常变化，尤其是 QDII ETF 的盘中估值、IOPV、折溢价率，不同来源口径可能不一致。人工录入代表用户主动用券商软件、HaoETF、基金公告等更可信来源校准，因此最新人工记录里的非空字段会优先覆盖 AKShare；未填写的字段仍回退到免费接口，避免误以为保存人工行情后必须填写所有字段。
 
-### 6.2 为什么不自动交易？
+### 7.2 为什么不自动交易？
 
 因为 QDII ETF 的真实风险来自：
 
@@ -152,7 +179,7 @@ curl -X POST "http://127.0.0.1:8000/api/monitor/run?force_agent=true"
 
 这些信息很难完全自动化确认。第一版只做提醒更稳妥。
 
-### 6.3 下单前一定要人工确认
+### 7.3 下单前一定要人工确认
 
 真正买卖前，请至少确认：
 
@@ -162,7 +189,7 @@ curl -X POST "http://127.0.0.1:8000/api/monitor/run?force_agent=true"
 - 基金公告是否有溢价风险提示或停牌提示
 - 你的总仓位是否超出计划
 
-## 7. 项目结构
+## 8. 项目结构
 
 ```text
 etf_agent_monitor/
@@ -177,6 +204,7 @@ etf_agent_monitor/
 │   │   ├── market_data.py      # AKShare/人工行情适配器
 │   │   ├── rules.py            # 硬规则引擎
 │   │   ├── openrouter_agent.py # OpenRouter Agent
+│   │   ├── email_notifier.py   # SMTP 邮件提醒
 │   │   ├── monitor.py          # 盯盘主流程
 │   │   └── scheduler.py        # 定时任务
 │   ├── templates/
@@ -188,9 +216,9 @@ etf_agent_monitor/
 └── README.md
 ```
 
-## 8. 后续可扩展方向
+## 9. 后续可扩展方向
 
-- 接入邮件/Telegram/企业微信提醒
+- 接入 Telegram/企业微信提醒
 - 增加基金公告爬取 Agent
 - 增加美元人民币汇率和底层指数数据
 - 增加组合净值曲线
@@ -199,7 +227,7 @@ etf_agent_monitor/
 - 增加数据源健康检查
 - 增加 Dockerfile
 
-## 9. 当前策略口径
+## 10. 当前策略口径
 
 当前系统默认延续以下策略：
 
